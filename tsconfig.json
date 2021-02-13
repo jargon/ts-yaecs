@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "es2016",
+    "module": "commonjs",
+    "jsx": "react",
+    "moduleResolution": "node",
+    "sourceMap": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "removeComments": false,
+    "outDir": "dist",
+    "allowUnusedLabels": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noImplicitAny": true,
+    "noUnusedParameters": false,
+    "noUnusedLocals": false,
+    "strictNullChecks": true,
+    "importHelpers": true,
+    "lib": [
+      "es2020",
+      "dom"
+    ],
+    "pretty": true,
+    "typeRoots": [
+      "node_modules/@types"
+    ]
+  },
+  "exclude": [
+    "node_modules"
+  ],
+  "compileOnSave": true,
+  "buildOnSave": false
+}
