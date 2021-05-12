@@ -18,7 +18,7 @@
         "html5-history-api": "^4.2.10",
         "io-ts": "^2.2.14",
         "io-ts-reporters": "^1.2.2",
-        "lodash": "^4.17.20",
+        "lodash": "^4.17.21",
         "lodash-es": "^4.17.20",
         "pixi.js": "^5.3.7",
         "spinkit": "^2.0.1",
