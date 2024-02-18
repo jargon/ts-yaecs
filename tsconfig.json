@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
     "target": "es2016",
-    "module": "commonjs",
+    "module": "ESNext",
+    "esModuleInterop": true,
     "jsx": "react",
     "moduleResolution": "node",
     "sourceMap": true,
@@ -22,7 +23,9 @@
       "dom"
     ],
     "pretty": true,
+    "resolveJsonModule": true,
     "typeRoots": [
+      "./typings",
       "node_modules/@types"
     ]
   },

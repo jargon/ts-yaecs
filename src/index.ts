@@ -1,8 +1,17 @@
+import { grid } from "./lib/spinner"
 //import 'html5-history-api'
-import * as PIXI from 'pixi.js'
 //import 'promise-polyfill/src/polyfill'
-import './game/assets/ship.png'
 
-const app = new PIXI.Application()
-document.getElementById("container")?.appendChild(app.view)
+grid("spinner")
+initialize()
 
+async function initialize() {
+    const { bootstrap } = await import("./game/boot")
+
+    const spinner = document.getElementById("spinner")
+    if (spinner) {
+        spinner.style.display = "none"
+    }
+
+    bootstrap()
+}

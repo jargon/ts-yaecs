@@ -1,0 +1,13 @@
+{
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        // Target EcmaScript 2015 because modern NodeJS versions (6.x.x+) have very good support
+        "target": "es2015",
+
+        // These files are run on NodeJS so we need to specify a compatible module system
+        "module": "commonjs",
+    },
+    "include": [
+        "./**/*"
+    ]
+}

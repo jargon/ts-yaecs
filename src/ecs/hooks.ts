@@ -6,10 +6,16 @@ export interface HooksContext {
     currentIndex: number
 }
 
+export interface Reference<T> {
+    current: T
+}
+
 export type UseStateResult<T> = [value: T, setValue: (value: T) => T]
 export type CleanupFunc = () => void
 
-export function useState<T>(context: HooksContext, initialValue?: T): UseStateResult<T> {
+export function useState<T = undefined>(context: HooksContext): UseStateResult<T | undefined>;
+export function useState<T>(context: HooksContext, initialValue: T): UseStateResult<T>;
+export function useState<T>(context: HooksContext, initialValue?: T): UseStateResult<T | undefined> {
     const hooks = context.hooks
     const initIndex = context.currentIndex++
     const stateIndex = context.currentIndex++
@@ -24,6 +30,26 @@ export function useState<T>(context: HooksContext, initialValue?: T): UseStateRe
     const state = hooks[stateIndex]
     const setState = (newState: T) => hooks[stateIndex] = newState
     return [state, setState]
+}
+
+export function useRef<T = undefined>(context: HooksContext): Reference<T | undefined>;
+export function useRef<T>(context: HooksContext, initialValue: T): Reference<T>;
+export function useRef<T>(context: HooksContext, initialValue?: T): Reference<T | undefined> {
+    const hooks = context.hooks
+    const initIndex = context.currentIndex++
+    const refIndex = context.currentIndex++
+
+    const initialized = hooks[initIndex] === true
+
+    if (!initialized) {
+        hooks[initIndex] = true
+        hooks[refIndex] = {
+            current: initialValue
+        }
+    }
+
+    const ref = hooks[refIndex]
+    return ref
 }
 
 export function useEffect(context: HooksContext, callback: () => CleanupFunc | void, dependencies?: any[], deferCleanup = true) {
@@ -69,7 +95,7 @@ export function useMemo<T extends (...args: any[]) => any>(context: HooksContext
         }
     }, params)
 
-    return result
+    return result!
 }
 
 export const createContext = (): HooksContext => ({ hooks: [], cleanup: [], currentIndex: 0 })

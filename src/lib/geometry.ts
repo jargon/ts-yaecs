@@ -3,6 +3,17 @@ export interface Vector2D {
     y: number
 }
 
+export interface RectangleSize {
+    /**
+     * Half width of the rectangle
+     */
+    hw: number
+    /**
+     * Half height of the rectangle
+     */
+    hh: number
+}
+
 export interface AABB {
     readonly min: Vector2D
     readonly max: Vector2D

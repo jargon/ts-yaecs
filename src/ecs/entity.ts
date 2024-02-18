@@ -9,10 +9,14 @@ export interface Component {
 }
 
 export interface Entity {
+    id: EntityId
+
     hasTag(tag: string): boolean
     allTags(): string[]
     addTag(tag: string): void
+    addTags(tags: Iterable<string>): void
     removeTag(tag: string): void
+    removeTags(tags: Iterable<string>): void
 
     readonly components: Components
 }
@@ -33,6 +37,8 @@ export interface Components {
 
 export type ChangeHandler = (entity: EntityClass) => void
 
+export const eq = (x: Entity, y: Entity) => x.id === y.id
+
 export class EntityClass implements Entity, Components {
     readonly id: EntityId
     private ownComponents: Component[]
@@ -40,8 +46,14 @@ export class EntityClass implements Entity, Components {
 
     private onChange: ChangeHandler
 
-    constructor(components: Component[], tags: string[], onChange: ChangeHandler) {
-        this.id = nextId++
+    constructor(components: Component[], tags: string[], onChange: ChangeHandler, id?: EntityId) {
+        if (typeof(id) !== "undefined") {
+            this.id = id
+            // Make sure new entities will always have higher id than any loaded entity
+            nextId = id + 1
+        } else {
+            this.id = nextId++
+        }
         this.ownComponents = components
         this.tags = tags
 
@@ -70,9 +82,26 @@ export class EntityClass implements Entity, Components {
         this.onChange(this)
     }
 
+    addTags(tags: Iterable<string>) {
+        for (const tag of tags) {
+            if (!this.hasTag(tag)) {
+                this.tags.push(tag)
+            }
+        }
+        this.onChange(this)
+    }
+
     removeTag(tag: string) {
         const index = this.tags.findIndex(t => t === tag)
         this.tags.splice(index, 1)
+        this.onChange(this)
+    }
+
+    removeTags(tags: Iterable<string>) {
+        for (const tag of tags) {
+            const index = this.tags.findIndex(t => t === tag)
+            this.tags.splice(index, 1)
+        }
         this.onChange(this)
     }
 
@@ -118,7 +147,9 @@ export class EntityClass implements Entity, Components {
         this.tags.forEach(t => componentTypesOrTags.add(t))
 
         for (const requirement of query) {
-            if (!componentTypesOrTags.has(requirement)) return false
+            const mustHave = !requirement.startsWith("-")
+            if (mustHave && !componentTypesOrTags.has(requirement)) return false
+            if (!mustHave && componentTypesOrTags.has(requirement)) return false
         }
 
         return true

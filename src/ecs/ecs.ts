@@ -1,65 +1,63 @@
-import { Component, Entity, EntityClass, EntityId } from "./entity"
+import { partition } from "../lib/util"
+import { Component, Entity, EntityClass, EntityId, eq as entityEq } from "./entity"
 import { Query, makeKey } from "./query"
-import { CleanupFunc, HooksContext, UseStateResult, retire, reset, useEffect, useMemo, useState, createContext } from "./hooks"
-import { Vector2D } from "../lib/geometry"
+import { CleanupFunc, HooksContext, UseStateResult, retire, reset, useEffect, useMemo, useState, createContext, Reference, useRef } from "./hooks"
 
-export type SystemFunc = (world: WorldSystem) => void
+export type SystemFunc<TContext> = (world: WorldSystem<TContext>) => void
 
-interface System {
+interface System<TContext> {
     id: string
-    run: SystemFunc
+    run: SystemFunc<TContext>
     context: HooksContext
 }
 
-export interface World {
+export interface DeltaCollection<T> {
+    enter: T[]
+    still: T[]
+    exit: T[]
+}
+
+export interface World<TContext = void> {
     addEntity: (initialComponents: Component[], ...initialTags: string[]) => EntityId
+    loadEntity: (id: EntityId, components: Component[], tags: string[]) => void
     getEntity: (id: EntityId) => Entity | undefined
     removeEntity: (id: EntityId) => boolean
 
-    addSystem: (group: string, id: string, system: SystemFunc) => void
+    addSystem: (group: string, id: string, system: SystemFunc<TContext>) => void
     removeSystem: (group: string, id: string) => void
     run: (group: string) => void
+
+    readonly context: TContext
 }
 
-export interface WorldSystem extends World {
-    useState: <T>(intialValue: T) => UseStateResult<T>
+export interface WorldSystem<TContext> extends World<TContext> {
+    useState<T>(initialValue: T): UseStateResult<T>;
+    useState<T = undefined>(): UseStateResult<T | undefined>;
+    useState<T>(intialValue?: T): UseStateResult<T | undefined>
+    
+    useRef<T>(initialValue: T): Reference<T>;
+    useRef<T = undefined>(): Reference<T | undefined>;
+    useRef<T>(initialValue?: T): Reference<T | undefined>
+    
     useEffect: (callback: () => void, dependencies: any[]) => void
-    useQuery: (...componentType: string[]) => Entity[]
+    useQuery: (...componentTypesOrTags: string[]) => Entity[]
+    useDeltaQuery: (...componentTypesOrTags: string[]) => DeltaCollection<Entity>
 }
 
-export interface Position2D extends Component, Vector2D {
-    type: "position"
-}
-
-export interface Physics2D {
-    type: "physics"
-    velocity: Vector2D
-    acceleration: Vector2D
-    maxVelocity: Vector2D
-}
-
-export interface Collision {
-    collider: Entity
-    delta: Vector2D
-    normal: Vector2D
-}
-export interface Collisions {
-    type: "collisions"
-    collisions: Collision[]
-}
-
-class WorldClass implements WorldSystem {
+class WorldClass<TContext> implements WorldSystem<TContext> {
     entities: Map<EntityId, EntityClass>
-    systems: Map<string, System[]>
+    systems: Map<string, System<TContext>[]>
     queries: Map<string, Query>
 
-    currentSystem?: System
+    worldContext: TContext
+    currentSystem?: System<TContext>
 
-    constructor() {
+    constructor(context?: TContext) {
         this.entities = new Map()
         this.systems = new Map()
         this.queries = new Map()
 
+        if (typeof context !== "undefined") this.worldContext = context
         this.currentSystem = undefined
 
         this.handleUpdated = this.handleUpdated.bind(this)
@@ -73,6 +71,17 @@ class WorldClass implements WorldSystem {
 
     addEntity(initialComponents: Component[], ...tags: string[]) {
         const entity = new EntityClass(initialComponents, tags, this.handleUpdated)
+
+        for (const query of this.queries.values()) {
+            query.added(entity)
+        }
+
+        this.entities.set(entity.id, entity)
+        return entity.id
+    }
+
+    loadEntity(id: EntityId, components: Component[], tags: string[]) {
+        const entity = new EntityClass(components, tags, this.handleUpdated, id)
 
         for (const query of this.queries.values()) {
             query.added(entity)
@@ -105,7 +114,7 @@ class WorldClass implements WorldSystem {
         return true
     }
 
-    addSystem(group: string, id: string, system: SystemFunc) {
+    addSystem(group: string, id: string, system: SystemFunc<TContext>) {
         let g = this.systems.get(group)
         if (!g) {
             g = []
@@ -134,7 +143,7 @@ class WorldClass implements WorldSystem {
         for (const system of g) {
             // Initialize current system and reset context before running each system
             this.currentSystem = system
-            reset(this.context)
+            reset(this.systemContext)
 
             system.run(this)
         }
@@ -142,16 +151,22 @@ class WorldClass implements WorldSystem {
 
     useState<T>(initialValue: T): UseStateResult<T>;
     useState<T = undefined>(): UseStateResult<T | undefined>;
-    useState<T>(initialValue?: T): UseStateResult<T> {
-        return useState(this.context, initialValue)
+    useState<T>(initialValue?: T): UseStateResult<T | undefined> {
+        return useState(this.systemContext, initialValue)
+    }
+
+//    useRef<T>(initialValue: T): Reference<T>;
+//    useRef<T = undefined>(): Reference<T | undefined>;
+    useRef<T>(initialValue?: T): Reference<T | undefined> {
+        return useRef(this.systemContext, initialValue)
     }
 
     useEffect(callback: () => CleanupFunc | void, dependencies?: any[]) {
-        useEffect(this.context, callback, dependencies)
+        useEffect(this.systemContext, callback, dependencies)
     }
 
     useMemo<T extends (...args: any[]) => any>(factory: T, dependencies: Parameters<T>): ReturnType<T> {
-        return useMemo(this.context, factory, dependencies)
+        return useMemo(this.systemContext, factory, dependencies)
     }
 
     useQuery(...componentTypesOrTags: string[]) {
@@ -182,7 +197,43 @@ class WorldClass implements WorldSystem {
         return query!.matches
     }
 
+    useDeltaQuery(...componentTypesOrTags: string[]) {
+        let [query, setQuery] = this.useState<Query>()
+        const [prevMatches, setPrevMatches] = this.useState<Entity[]>([])
+
+        this.useEffect(() => {
+            const key = makeKey(componentTypesOrTags)
+
+            query = this.queries.get(key)
+            if (query) {
+                query.register()
+            } else {
+                query = new Query(componentTypesOrTags, this.entities.values())
+                this.queries.set(key, query)
+            }
+
+            // Remember query for when useEffect is skipped
+            setQuery(query)
+
+            // Cleanup registration when no longer in use
+            return () => {
+                if (query!.unregister()) {
+                    this.queries.delete(key)
+                }
+            }
+        }, componentTypesOrTags)
+
+        const matches = query!.matches
+        const [enter, still, exit] = partition(matches, prevMatches, entityEq)
+        setPrevMatches(matches)
+        
+        return { enter, still, exit }
+    }
+
     get context() {
+        return this.worldContext
+    }
+    get systemContext() {
         if (this.currentSystem) {
             return this.currentSystem.context
         }
@@ -191,32 +242,8 @@ class WorldClass implements WorldSystem {
     }
 }
 
-export const createWorld = (): World => {
-    return new WorldClass()
-}
-
-export const physicsSystem = (world: WorldSystem) => {
-    const entities = world.useQuery("position", "physics", "collisions")
-
-    for (const entity of entities) {
-        const pos = entity.components.getOne("position") as Position2D
-        const move = entity.components.getOne("physics") as Physics2D
-        const coll = entity.components.getOne("collisions") as Collisions
-
-        physics(pos, move, coll)
-    }
-}
-
-export const physics = (pos: Position2D, move: Physics2D, coll: Collisions) => {
-    const { x, y } = pos
-    const { x: vx, y: vy } = move.velocity
-    const { x: ax, y: ay } = move.acceleration
-
-    // Calculate new velocity
-    move.velocity.x = Math.min(vx + ax, move.maxVelocity.x)
-    move.velocity.y = Math.min(vy + ay, move.maxVelocity.y)
-
-    // Calculate new position
-    pos.x = x + vx
-    pos.y = y + vy
+export function createWorld(): World<void>
+export function createWorld<TContext>(context: TContext): World<TContext>
+export function createWorld<TContext = void>(context?: TContext): World<TContext> {
+    return new WorldClass(context)
 }

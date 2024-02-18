@@ -10,7 +10,39 @@ export function defer(task: () => void) {
     queueMicrotask(task)
 }
 
-export function arrayEq(x: any[], y: any[]) {
-    if (x.length !== y.length) return false
-    return x.every((el, i) => el === y[i])
+export function arrayEq(xs: any[], ys: any[]) {
+    if (xs.length !== ys.length) return false
+    return xs.every((el, i) => el === ys[i])
+}
+
+export function partition<T>(xs: T[], ys: T[], eq: (x: T, y: T) => boolean) {
+    const xsMinusYs = []
+    const ysMinusXs = []
+    const intersection = []
+    for (const x of xs) {
+        let match = false
+        for (const y of ys) {
+            if (eq(x, y)) {
+                intersection.push(x)
+                match = true
+                break
+            }
+        }
+        if (!match) {
+            xsMinusYs.push(x)
+        }
+    }
+    for (const y of ys) {
+        let match = false
+        for (const x of xs) {
+            if (eq(y, x)) {
+                match = true
+                break
+            }
+        }
+        if (!match) {
+            ysMinusXs.push(y)
+        }
+    }
+    return [xsMinusYs, intersection, ysMinusXs]
 }
